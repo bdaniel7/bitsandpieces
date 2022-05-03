@@ -1,0 +1,14 @@
+server:
+  name: kibana
+  host: "kibana"
+
+elasticsearch:
+  hosts: [ "http://elasticsearch:9200" ]
+  username: "elastic"
+  password: "bozklPbQN234mlwerVyVermUROQ*"
+  #serviceAccountToken: ""
+
+xpack.monitoring.ui.container.elasticsearch.enabled: true
+xpack.reporting.encryptionKey: "q6m29dc74jh934rwacsdp9d7l2@53ldf"
+xpack.encryptedSavedObjects.encryptionKey: "q6m29dc74jh934rwacsdp9d7l2@53ldf"
+xpack.security.encryptionKey: "q6m29dc74jh934rwacsdp9d7l2@53ldf"

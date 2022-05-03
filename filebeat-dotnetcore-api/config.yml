@@ -1,0 +1,18 @@
+filebeat.inputs:
+  - type: log
+    paths:
+      - /usr/share/services/dotnetcore-api/logs/application*.log
+    enabled: true
+    encoding: utf-8
+    json:
+      keys_under_root: true 
+      add_error_key: true 
+      message_key: message
+    tags:
+      - dotnetcore-api
+
+output.elasticsearch:
+  hosts: [ "elasticsearch:9200" ]
+  protocol: "http"
+  username: "elastic"
+  password: "bozklPbQN234mlwerVyVermUROQ*"
