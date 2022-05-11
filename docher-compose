@@ -1,0 +1,277 @@
+version: "3.7"
+
+networks:
+
+  default:
+    name: "elasticapm-net"
+    driver: "bridge"
+
+services:
+  setup:
+    image: "remote-docker-elastic.artifactory.danskenet.net/elasticsearch/elasticsearch:${STACK_VERSION}"
+    # environment:
+      # - "ES_JAVA_OPTS=-Xmx256m -Xms256m"
+      # - "ELASTIC_PASSWORD=bozklPbQN234mlwerVyVermUROQ*"
+    # ulimits:
+      # memlock:
+        # hard: -1
+        # soft: -1
+    volumes:
+      # - "./elasticsearch/config.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro"
+      # - "elasticsearch-data:/usr/share/elasticsearch/data"
+      - certs:/usr/share/elasticsearch/config/certs
+    user: "0"
+    command: >
+      bash -c '
+        if [ x${ELASTIC_PASSWORD} == x ]; then
+          echo "Set the ELASTIC_PASSWORD environment variable in the .env file";
+          exit 1;
+        elif [ x${KIBANA_PASSWORD} == x ]; then
+          echo "Set the KIBANA_PASSWORD environment variable in the .env file";
+          exit 1;
+        fi;
+        if [ ! -f config/certs/ca.zip ]; then
+          echo "Creating CA";
+          bin/elasticsearch-certutil ca --silent --pem -out config/certs/ca.zip;
+          unzip config/certs/ca.zip -d config/certs;
+        fi;
+        if [ ! -f config/certs/certs.zip ]; then
+          echo "Creating certs";
+          echo -ne \
+          "instances:\n"\
+          "  - name: es01\n"\
+          "    dns:\n"\
+          "      - es01\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
+          "  - name: es02\n"\
+          "    dns:\n"\
+          "      - es02\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
+          > config/certs/instances.yml;
+          bin/elasticsearch-certutil cert --silent --pem -out config/certs/certs.zip --in config/certs/instances.yml --ca-cert config/certs/ca/ca.crt --ca-key config/certs/ca/ca.key;
+          unzip config/certs/certs.zip -d config/certs;
+        fi;
+        echo "Setting file permissions"
+        chown -R root:root config/certs;
+        find . -type d -exec chmod 750 \{\} \;;
+        find . -type f -exec chmod 640 \{\} \;;
+        echo "Waiting for Elasticsearch availability";
+        until curl -s --cacert config/certs/ca/ca.crt https://es01:9200 | grep -q "missing authentication credentials"; do sleep 10; done;
+        echo "Setting kibana_system password";
+        until curl -s -X POST --cacert config/certs/ca/ca.crt -u elastic:${ELASTIC_PASSWORD} -H "Content-Type: application/json" https://es01:9200/_security/user/kibana_system/_password -d "{\"password\":\"${KIBANA_PASSWORD}\"}" | grep -q "^{}"; do sleep 10; done;
+        echo "All done!";
+      '
+    # ports:
+      # - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f config/certs/es01/es01.crt ]"]
+      interval: 1s
+      timeout: 5s
+      retries: 120
+
+  es01:
+    depends_on:
+      setup:
+        condition: service_healthy
+    image: remote-docker-elastic.artifactory.danskenet.net/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esdata01:/usr/share/elasticsearch/data
+#      - "./elasticsearch/config.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro"
+    ports:
+      - ${ES_PORT}:9200
+    environment:
+      - node.name=es01
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=es01,es02
+      - discovery.seed_hosts=es02
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/es01/es01.key
+      - xpack.security.http.ssl.certificate=certs/es01/es01.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.http.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/es01/es01.key
+      - xpack.security.transport.ssl.certificate=certs/es01/es01.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.license.self_generated.type=${LICENSE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
+  es02:
+    depends_on:
+      - es01
+    image: remote-docker-elastic.artifactory.danskenet.net/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esdata02:/usr/share/elasticsearch/data
+    environment:
+      - node.name=es02
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=es01,es02
+      - discovery.seed_hosts=es01
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/es02/es02.key
+      - xpack.security.http.ssl.certificate=certs/es02/es02.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.http.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/es02/es02.key
+      - xpack.security.transport.ssl.certificate=certs/es02/es02.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.license.self_generated.type=${LICENSE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
+  kibana:
+    image: "remote-docker-elastic.artifactory.danskenet.net/kibana/kibana:${STACK_VERSION}"
+    depends_on:
+      es01:
+        condition: service_healthy
+      es02:
+        condition: service_healthy
+    volumes:
+      - "./kibana/config.yml:/usr/share/kibana/config/kibana.yml:ro"
+      - certs:/usr/share/kibana/config/certs
+      - kibanadata:/usr/share/kibana/data
+    ports:
+      - ${KIBANA_PORT}:5601
+    environment:
+      - SERVERNAME=kibana
+      - ELASTICSEARCH_HOSTS=https://es01:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+      - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
+    mem_limit: ${MEM_LIMIT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
+  elastic-agent:
+    image: remote-docker-elastic.artifactory.danskenet.net/beats/elastic-agent:${STACK_VERSION}
+    restart: always
+    depends_on:
+      kibana:
+        condition: service_healthy
+    user: root # note, synthetic browser monitors require this set to `elastic-agent`
+    environment:
+      - ELASTICSEARCH_HOST=https://es01:9200
+#      - KIBANA_HOST=http://kibana:5601
+      - KIBANA_FLEET_SETUP=0
+#      - KIBANA_FLEET_HOST=http://kibana:5601
+      - FLEET_ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
+      - FLEET_ENROLL=1
+      - FLEET_INSECURE=1
+      - FLEET_SERVER_INSECURE_HTTP=1
+      - FLEET_URL=http://localhost:8220
+      - FLEET_SERVER_ENABLE=1
+      - FLEET_SERVER_ELASTICSEARCH_HOST=https://es01:9200
+      - FLEET_SERVER_SERVICE_TOKEN=${SERVICE_TOKEN}
+      - FLEET_SERVER_POLICY_ID=fleet_server-1
+
+  # apm-server:
+    # image: "remote-docker-elastic.artifactory.danskenet.net/apm/apm-server:7.17.3"
+    # container_name: "apm-server"
+    # depends_on:
+      # elasticsearch:
+        # condition: "service_healthy"
+      # kibana:
+        # condition: "service_healthy"
+    # volumes:
+      # - "./apm-server/config.yml:/usr/share/apm-server/apm-server.yml:ro"
+    # ports:
+      # - "8200:8200"
+    # command:
+      # - "apm-server"
+      # - "--strict.perms=false"
+      # - "-e"
+    # healthcheck:
+      # interval: "10s"
+      # retries: 12
+      # test: "curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/"
+
+  # dotnetcore-api:
+    # image: "${DOCKER_REGISTRY-}dotnetcore-api"
+    # build:
+      # context: "./dotnetcore-api"
+      # dockerfile: "Dockerfile"
+    # container_name: "dotnetcore-api"
+    # depends_on:
+      # elasticsearch:
+        # condition: service_healthy
+      # kibana:
+        # condition: service_healthy
+      # apm-server:
+        # condition: service_healthy
+    # volumes:
+      # - "./dotnetcore-api/.logs:/app/logs"
+    # ports:
+      # - "8181:8181"
+
+  # filebeat-dotnetcore-api:
+    # image: "remote-docker-elastic.artifactory.danskenet.net/beats/filebeat:7.17.3"
+    # container_name: "filebeat-dotnetcore-api"
+    # depends_on:
+      # elasticsearch:
+        # condition: service_healthy
+      # kibana:
+        # condition: service_healthy
+    # volumes:
+      # - "./filebeat-dotnetcore-api/config.yml:/usr/share/filebeat/filebeat.yml:ro"
+      # - "./dotnetcore-api/.logs:/usr/share/services/dotnetcore-api/logs"
+    # command:
+      # - "filebeat"
+      # - "--strict.perms=false"
+      # - "-e"
+
+volumes:
+
+  certs:
+    driver: local
+  esdata01:
+    driver: local
+  esdata02:
+    driver: local
+  kibanadata:
+    driver: local
