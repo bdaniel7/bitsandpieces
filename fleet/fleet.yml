@@ -1,0 +1,8 @@
+agent.monitoring:
+enabled: true
+  logs: true
+  metrics: true
+  http:
+      enabled: true
+      host: 0.0.0.0
+      port: 6791

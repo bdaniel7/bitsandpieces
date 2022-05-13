@@ -1,0 +1,36 @@
+apm-server:
+  host: "0.0.0.0:8200"
+
+api_key:
+  enabled: false
+  limit: 1000
+
+ssl:
+  enabled: false
+  certificate: '/usr/share/apm-server/certs/apm/apm.crt'
+  key: '/usr/share/apm-server/certs/apm/apm.key'
+
+kibana:
+  enabled: true
+  host: "kibana:5601"
+  protocol: "https"
+  username: "kibana_system"
+  password: "${KIBANA_PASSWORD}"
+  ssl.enabled: true
+  ssl.verification_mode: full
+  ssl.certificate_authorities: ["/usr/share/apm-server/certs/ca/ca.crt"]
+
+output.elasticsearch:
+  hosts: ["https://es01:9200", "https://es02:9200"]
+  enabled: true
+  protocol: "https"
+  username: "elastic"
+  password: "${ELASTIC_PASSWORD}"
+  ssl.enabled: true
+  ssl.verification_mode: full
+  ssl.certificate_authorities: ["/usr/share/apm-server/certs/ca/ca.crt"]
+
+http:
+  enabled: true
+  host: 0.0.0.0
+  port: 5066

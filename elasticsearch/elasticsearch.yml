@@ -3,12 +3,12 @@ cluster.routing.allocation.disk.threshold_enabled: false
 
 network.host: 0.0.0.0
 
-discovery.type: single-node
-
 bootstrap.memory_lock: true
 
-xpack.license.self_generated.type: trial
+xpack.license.self_generated.type: basic
 xpack.security.enabled: true
 xpack.monitoring.collection.enabled: true
 xpack.security.authc.api_key.enabled: true
 xpack.security.authc.token.enabled: true
+
+action.auto_create_index: ".ent-search-*-logs-*,-.ent-search-*,-test-.ent-search-*,+*"

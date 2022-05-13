@@ -1,0 +1,32 @@
+version: '2.2'
+
+networks:
+  default:
+    name: "elasticapm-net"
+    driver: "bridge"
+
+services:
+  apm-server:
+    image: docker.elastic.co/apm/apm-server:${STACK_VERSION}
+    container_name: "apm-server"
+    volumes:
+      - certs:/usr/share/apm-server/certs
+      - "./apm-server/apm-server.yml:/usr/share/apm-server/apm-server.yml:ro"
+    environment:
+      - KIBANA_PASSWORD=${KIBANA_PASSWORD}
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+    ports:
+      - "8200:8200"
+    restart: on-failure
+    command:
+      - "apm-server"
+      - "--strict.perms=false"
+      - "-e"
+    healthcheck:
+      interval: "10s"
+      retries: 13
+      test: "curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/"
+
+volumes:
+  certs:
+    driver: local
