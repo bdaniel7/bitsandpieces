@@ -8,7 +8,7 @@ networks:
 
 services:
   setup:
-    image: "remote-docker-elastic.artifactory.danskenet.net/elasticsearch/elasticsearch:${STACK_VERSION}"
+    image: "docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}"
     # environment:
       # - "ES_JAVA_OPTS=-Xmx256m -Xms256m"
       # - "ELASTIC_PASSWORD=bozklPbQN234mlwerVyVermUROQ*"
@@ -77,7 +77,7 @@ services:
     depends_on:
       setup:
         condition: service_healthy
-    image: remote-docker-elastic.artifactory.danskenet.net/elasticsearch/elasticsearch:${STACK_VERSION}
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
       - esdata01:/usr/share/elasticsearch/data
@@ -121,7 +121,7 @@ services:
   es02:
     depends_on:
       - es01
-    image: remote-docker-elastic.artifactory.danskenet.net/elasticsearch/elasticsearch:${STACK_VERSION}
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
       - esdata02:/usr/share/elasticsearch/data
@@ -159,7 +159,7 @@ services:
       retries: 120
 
   kibana:
-    image: "remote-docker-elastic.artifactory.danskenet.net/kibana/kibana:${STACK_VERSION}"
+    image: "docker.elastic.co/kibana/kibana:${STACK_VERSION}"
     depends_on:
       es01:
         condition: service_healthy
@@ -182,36 +182,47 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -s -I http://localhost:5601 | grep -q 'HTTP/1.1 302 Found'",
+          "curl -s -I http://kibana:5601 | grep -q 'HTTP/1.1 302 Found'",
         ]
       interval: 10s
       timeout: 10s
       retries: 120
 
   elastic-agent:
-    image: remote-docker-elastic.artifactory.danskenet.net/beats/elastic-agent:${STACK_VERSION}
-    restart: always
+    image: docker.elastic.co/beats/elastic-agent:${STACK_VERSION}
     depends_on:
-      kibana:
+      setup:
         condition: service_healthy
     user: root # note, synthetic browser monitors require this set to `elastic-agent`
+    container_name: elastic_agent_1
+    volumes:
+      - certs:/usr/share/elastic-agent/config/certs
+    ports:
+      - "8200:8200"
     environment:
+      - ELASTICSEARCH_CA=/usr/share/elastic-agent/config/certs/ca/ca.crt
+      - KIBANA_CA=/usr/share/elastic-agent/config/certs/ca/ca.crt
       - ELASTICSEARCH_HOST=https://es01:9200
-#      - KIBANA_HOST=http://kibana:5601
-      - KIBANA_FLEET_SETUP=0
-#      - KIBANA_FLEET_HOST=http://kibana:5601
+      - KIBANA_HOST=http://kibana:5601
+      - KIBANA_FLEET_SETUP=1
+      - KIBANA_FLEET_HOST=http://kibana:5601
       - FLEET_ENROLLMENT_TOKEN=${ENROLLMENT_TOKEN}
       - FLEET_ENROLL=1
       - FLEET_INSECURE=1
       - FLEET_SERVER_INSECURE_HTTP=1
-      - FLEET_URL=http://localhost:8220
+      - FLEET_URL=https://localhost:8220
       - FLEET_SERVER_ENABLE=1
       - FLEET_SERVER_ELASTICSEARCH_HOST=https://es01:9200
       - FLEET_SERVER_SERVICE_TOKEN=${SERVICE_TOKEN}
-      - FLEET_SERVER_POLICY_ID=fleet_server-1
+      - FLEET_SERVER_POLICY_ID=${FLEET_SERVER_POLICY_ID}
+      - FLEET_SERVER_POLICY_NAME=fleet_server-1
+    healthcheck:
+      interval: 10s
+      retries: 12
+      test: "curl --write-out 'HTTP %{http_code}' --fail --silent --output /dev/null http://localhost:8200/"
 
   # apm-server:
-    # image: "remote-docker-elastic.artifactory.danskenet.net/apm/apm-server:7.17.3"
+    # image: "docker.elastic.co/apm/apm-server:7.17.3"
     # container_name: "apm-server"
     # depends_on:
       # elasticsearch:
@@ -250,7 +261,7 @@ services:
       # - "8181:8181"
 
   # filebeat-dotnetcore-api:
-    # image: "remote-docker-elastic.artifactory.danskenet.net/beats/filebeat:7.17.3"
+    # image: "docker.elastic.co/beats/filebeat:7.17.3"
     # container_name: "filebeat-dotnetcore-api"
     # depends_on:
       # elasticsearch:
